@@ -55,3 +55,14 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
 }
+
+// 让单元测试的失败原因（期望值 vs 实际值）直接打印到构建日志，便于在云端 CI 定位
+tasks.withType<Test>().configureEach {
+    testLogging {
+        events("failed", "skipped")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        showExceptions = true
+        showCauses = true
+        showStackTraces = true
+    }
+}

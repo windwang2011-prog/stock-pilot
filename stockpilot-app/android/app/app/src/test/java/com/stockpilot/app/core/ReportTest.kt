@@ -226,7 +226,11 @@ class ReportTest {
     fun `金额与百分比格式化`() {
         assertEquals("+1.50亿", Report.fmtMoney(1.5e8))
         assertEquals("-2.00亿", Report.fmtMoney(-2.0e8))
-        assertEquals("+3.20万", Report.fmtMoney(3.2e4))
+        // 「万」档保留一位小数（3.2e4 -> +3.2万）
+        assertEquals("+3.2万", Report.fmtMoney(3.2e4))
+        assertEquals("-1.5万", Report.fmtMoney(-1.5e4))
+        // 万元以下取整
+        assertEquals("+3500", Report.fmtMoney(3500.0))
         assertEquals("+2.50%", Report.fmtPct(2.5))
         assertEquals("-1.20%", Report.fmtPct(-1.2))
         assertEquals("--", Report.fmtPrice(null))
