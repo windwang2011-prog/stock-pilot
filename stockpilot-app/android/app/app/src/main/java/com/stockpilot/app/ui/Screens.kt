@@ -21,6 +21,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -29,6 +30,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.stockpilot.app.core.Report
+import com.stockpilot.app.core.ReportStock
+import com.stockpilot.app.core.StockRef
 import com.stockpilot.app.core.WatchResult
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -246,6 +249,12 @@ fun UsScreen(st: AppState, scope: CoroutineScope) {
 // ==================== 报告 ====================
 @Composable
 fun ReportScreen(st: AppState, scope: CoroutineScope) {
+    // 进入报告页时，若尚未载入个股清单，则自动载入最近一份报告（含后台服务生成的那份）
+    LaunchedEffect(Unit) {
+        if (st.reports.isNotEmpty() && st.reportText.isEmpty()) {
+            st.loadReport(st.reports.first().first)
+        }
+    }
     Column(Modifier.fillMaxSize().padding(16.dp)) {
         Head(st)
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -276,12 +285,72 @@ fun ReportScreen(st: AppState, scope: CoroutineScope) {
             "报告内容：大盘 → 热点板块 → 龙头个股 → 推荐个股（信号连续性排行）→ 我的关注 → 投资建议",
             fontSize = 11.sp, color = GRAY
         )
+        if (st.reportStocks.isNotEmpty()) {
+            val left = st.reportStocks.count { !st.isWatched(it.secid) }
+            Text(
+                "报告涉及个股 " + st.reportStocks.size + " 只，其中 " + left + " 只未关注（点「＋关注」加入自选）",
+                fontSize = 11.sp, color = RED
+            )
+        }
         Spacer(Modifier.height(6.dp))
         Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
+            for (row in st.reportStocks) {
+                ReportStockRow(
+                    row = row,
+                    watched = st.isWatched(row.secid)
+                ) {
+                    st.addWatchFromReport(StockRef(row.secid, row.code, row.name))
+                }
+            }
+            if (st.reportStocks.isNotEmpty()) {
+                Spacer(Modifier.height(10.dp))
+                Text("—— 报告正文 ——", fontSize = 11.sp, color = GRAY)
+                Spacer(Modifier.height(6.dp))
+            }
             Text(
                 if (st.reportText.isEmpty()) "报告内容将显示在这里。交易日 15:30 后会自动生成并推送通知。" else st.reportText,
                 fontSize = 12.sp
             )
+        }
+    }
+}
+
+/** 报告中的个股行（可关注） */
+@Composable
+private fun ReportStockRow(row: ReportStock, watched: Boolean, onAdd: () -> Unit) {
+    val px = row.price
+    Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(row.name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.width(6.dp))
+            Text(row.code, fontSize = 11.sp, color = GRAY)
+            Spacer(Modifier.weight(1f))
+            if (px != null) {
+                Text(
+                    String.format(Locale.US, "%.2f", px),
+                    fontSize = 14.sp, fontWeight = FontWeight.Bold, color = pctColor(row.changePct)
+                )
+                Spacer(Modifier.width(8.dp))
+            }
+            Text(pctText(row.changePct), fontSize = 12.sp, color = pctColor(row.changePct))
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(row.group, fontSize = 10.sp, color = GRAY)
+            Spacer(Modifier.width(8.dp))
+            Text("评分 " + row.score, fontSize = 11.sp, color = GRAY)
+            Spacer(Modifier.width(8.dp))
+            Text(row.action, fontSize = 11.sp, color = actionColor(row.action))
+            Spacer(Modifier.weight(1f))
+            if (watched) {
+                Text("已关注", fontSize = 11.sp, color = GRAY)
+            } else {
+                Text(
+                    "＋关注",
+                    fontSize = 12.sp,
+                    color = RED,
+                    modifier = Modifier.clickable { onAdd() }
+                )
+            }
         }
     }
 }

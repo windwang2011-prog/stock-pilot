@@ -146,6 +146,69 @@ class Store(ctx: Context) {
         sp.edit().putString(KEY_SIGNALS, arr.toString()).apply()
     }
 
+    // ---------------- 报告涉及个股（供「＋关注」入口，按日期保存） ----------------
+    fun appendReportStocks(date: String, rows: List<ReportStock>) {
+        if (rows.isEmpty()) return
+        val all = loadReportStocksAll().filter { it.first != date }.toMutableList()
+        all.add(Pair(date, rows))
+        val arr = JSONArray()
+        for (entry in all.sortedBy { it.first }.takeLast(20)) {
+            val items = JSONArray()
+            for (r in entry.second) {
+                val o = JSONObject()
+                    .put("secid", r.secid)
+                    .put("code", r.code)
+                    .put("name", r.name)
+                    .put("group", r.group)
+                    .put("score", r.score)
+                    .put("action", r.action)
+                    .put("changePct", r.changePct)
+                if (r.price != null) o.put("price", r.price)
+                items.put(o)
+            }
+            arr.put(JSONObject().put("date", entry.first).put("items", items))
+        }
+        sp.edit().putString(KEY_REPORT_STOCKS, arr.toString()).apply()
+    }
+
+    fun loadReportStocks(date: String): List<ReportStock> =
+        loadReportStocksAll().firstOrNull { it.first == date }?.second ?: emptyList()
+
+    private fun loadReportStocksAll(): List<Pair<String, List<ReportStock>>> {
+        val s = sp.getString(KEY_REPORT_STOCKS, null) ?: return emptyList()
+        return try {
+            val arr = JSONArray(s)
+            val out = ArrayList<Pair<String, List<ReportStock>>>()
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                val itemsArr = o.optJSONArray("items") ?: JSONArray()
+                val rows = ArrayList<ReportStock>()
+                for (j in 0 until itemsArr.length()) {
+                    val r = itemsArr.optJSONObject(j) ?: continue
+                    val secid = r.optString("secid")
+                    if (secid.isEmpty()) continue
+                    rows.add(
+                        ReportStock(
+                            secid = secid,
+                            code = r.optString("code"),
+                            name = r.optString("name"),
+                            group = r.optString("group"),
+                            score = r.optInt("score", 0),
+                            action = r.optString("action"),
+                            price = if (r.has("price") && !r.isNull("price"))
+                                r.optDouble("price") else null,
+                            changePct = r.optDouble("changePct", 0.0)
+                        )
+                    )
+                }
+                out.add(Pair(o.optString("date"), rows))
+            }
+            out.sortedBy { it.first }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
     // ---------------- 设置 ----------------
     var scanIntervalMin: Int
         get() = sp.getInt(KEY_INTERVAL, 5).coerceIn(1, 60)
@@ -170,6 +233,7 @@ class Store(ctx: Context) {
     companion object {
         private const val KEY_WATCH = "watchlist"
         private const val KEY_SIGNALS = "signalHistory"
+        private const val KEY_REPORT_STOCKS = "reportStocks"
         private const val KEY_LAST_ACTION = "lastAction"
         private const val KEY_REPORTS = "reports"
         private const val KEY_US_REPORTS = "usReports"

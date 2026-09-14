@@ -9,6 +9,7 @@ import androidx.compose.runtime.setValue
 import com.stockpilot.app.core.DataSource
 import com.stockpilot.app.core.Engine
 import com.stockpilot.app.core.MarketIndex
+import com.stockpilot.app.core.ReportStock
 import com.stockpilot.app.core.Sector
 import com.stockpilot.app.core.StockRef
 import com.stockpilot.app.core.Store
@@ -39,6 +40,8 @@ class AppState(private val ctx: Context) {
 
     var reports by mutableStateOf(store.loadReports())
     var reportText by mutableStateOf("")
+    /** 报告涉及的个股（用于报告页的「＋关注」）；启动时载入最近一份报告 */
+    var reportStocks by mutableStateOf<List<ReportStock>>(store.loadReportStocks(store.lastReportDate))
 
     var scanInterval by mutableStateOf(store.scanIntervalMin)
     var notifyEnabled by mutableStateOf(store.notifyEnabled)
@@ -145,6 +148,7 @@ class AppState(private val ctx: Context) {
             }
             reportText = text
             reports = store.loadReports()
+            reportStocks = store.loadReportStocks(store.lastReportDate)
             status = "报告已生成：" + store.lastReportDate
         } catch (e: Exception) {
             reportText = "生成失败：" + (e.message ?: e.javaClass.simpleName)
@@ -154,6 +158,13 @@ class AppState(private val ctx: Context) {
 
     fun loadReport(date: String) {
         reportText = reports.firstOrNull { it.first == date }?.second ?: ""
+        reportStocks = store.loadReportStocks(date)
+    }
+
+    /** 从报告页把个股加入自选 */
+    fun addWatchFromReport(ref: StockRef) {
+        addWatch(ref)
+        status = if (isWatched(ref.secid)) "已关注：" + ref.name else status
     }
 
     // ---------------- 美股盘面热点 ----------------

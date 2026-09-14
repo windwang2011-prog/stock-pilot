@@ -21,6 +21,21 @@ data class LeaderRow(
     val result: WatchResult
 )
 
+/**
+ * 报告中列举的个股（用于 App 内「＋关注」入口）。
+ * group 形如「推荐」「龙头·PCB」，便于界面分组展示。
+ */
+data class ReportStock(
+    val secid: String,
+    val code: String,
+    val name: String,
+    val group: String,
+    val score: Int,
+    val action: String,
+    val price: Double?,
+    val changePct: Double
+)
+
 /** 生成一份完整报告所需的全部素材 */
 class ReportInput(
     val date: String,
@@ -491,6 +506,36 @@ object Report {
 
     private fun codeOf(secid: String): String =
         if (secid.contains('.')) secid.substringAfter('.') else secid
+
+    /**
+     * 汇总报告中涉及的个股，供 App 内「＋关注」使用。
+     * 推荐个股优先，龙头股补充；按 secid 去重（同一只股票只出现一次）。
+     */
+    fun stockRows(recos: List<WatchResult>, leaders: List<LeaderRow>): List<ReportStock> {
+        val out = ArrayList<ReportStock>()
+        val seen = HashSet<String>()
+
+        fun add(r: WatchResult, group: String) {
+            val sid = r.stock.secid
+            if (sid.isEmpty() || !seen.add(sid)) return
+            out.add(
+                ReportStock(
+                    secid = sid,
+                    code = r.stock.code,
+                    name = r.stock.name,
+                    group = group,
+                    score = r.signal.score,
+                    action = r.signal.action,
+                    price = r.price,
+                    changePct = r.changePct
+                )
+            )
+        }
+
+        for (r in recos) add(r, "推荐")
+        for (l in leaders) add(l.result, "龙头·" + l.sectorName)
+        return out
+    }
 
     /** 用于通知栏的一行摘要 */
     fun summaryLine(results: List<WatchResult>): String {

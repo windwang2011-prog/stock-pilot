@@ -223,6 +223,29 @@ class ReportTest {
     }
 
     @Test
+    fun `报告个股汇总去重且推荐优先`() {
+        val recos = listOf(wr("1.688981", "688981", "中芯国际", 78, "买入", 50.0, 3.10))
+        val leaders = listOf(
+            LeaderRow("培育钻石", 5.21, wr("0.839725", "839725", "惠丰钻石", 86, "买入", 34.45, 9.98)),
+            // 与推荐重复：同一 secid 只保留一次
+            LeaderRow("半导体", 3.00, wr("1.688981", "688981", "中芯国际", 78, "买入", 50.0, 3.10))
+        )
+        val rows = Report.stockRows(recos, leaders)
+        assertEquals(2, rows.size)
+        assertEquals("中芯国际", rows[0].name)
+        assertEquals("推荐", rows[0].group)
+        assertEquals(78, rows[0].score)
+        assertEquals("惠丰钻石", rows[1].name)
+        assertTrue(rows[1].group.startsWith("龙头"))
+        assertEquals(34.45, rows[1].price ?: 0.0, 1e-9)
+    }
+
+    @Test
+    fun `报告个股汇总为空时不产生条目`() {
+        assertTrue(Report.stockRows(emptyList(), emptyList()).isEmpty())
+    }
+
+    @Test
     fun `金额与百分比格式化`() {
         assertEquals("+1.50亿", Report.fmtMoney(1.5e8))
         assertEquals("-2.00亿", Report.fmtMoney(-2.0e8))

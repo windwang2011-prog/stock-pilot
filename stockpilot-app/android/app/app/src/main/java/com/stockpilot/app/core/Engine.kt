@@ -150,6 +150,10 @@ class Engine(private val ds: DataSource, private val store: Store) {
         val text = Report.build(input)
         store.appendReport(date, text)
 
+        // 保存报告涉及的个股清单，供 App 内「＋关注」入口使用
+        val rows = Report.stockRows(input.recos, input.leaders)
+        if (rows.isNotEmpty()) store.appendReportStocks(date, rows)
+
         // 记录当日推荐快照，用于后续「连续 N 天建议买入」统计
         if (input.recos.isNotEmpty()) {
             store.appendSignalSnapshot(
