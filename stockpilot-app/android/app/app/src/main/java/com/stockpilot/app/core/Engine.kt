@@ -236,7 +236,46 @@ class Engine(private val ds: DataSource, private val store: Store) {
         if (recos.isEmpty()) notes.add("推荐个股数据不足，报告已降级")
         if (indexQuotes.isEmpty() && sectors.isEmpty()) notes.add("行情接口整体不可用，请检查网络后重新生成")
 
-        // ④ 连续性统计
+        // ④ 全市场成交与资金（沪市 / 深市 / 北交所；三者不重叠）
+        var snapshot: MarketSnapshot? = null
+        try {
+            val markets = ArrayList<MarketAmount>()
+            for ((name, secid, _) in MarketStat.MARKETS) {
+                val q = indexQuotes[secid]
+                val flow = try {
+                    ds.getFundFlow(secid)
+                } catch (e: Exception) {
+                    null
+                }
+                markets.add(
+                    MarketAmount(
+                        name = name,
+                        secid = secid,
+                        amount = q?.amount ?: 0.0,
+                        volume = q?.volume ?: 0.0,
+                        main = flow?.main ?: 0.0,
+                        superLarge = flow?.superLarge ?: 0.0,
+                        large = flow?.large ?: 0.0,
+                        medium = flow?.medium ?: 0.0,
+                        small = flow?.small ?: 0.0,
+                        mainPct = flow?.mainPct ?: 0.0
+                    )
+                )
+            }
+            val snap = MarketSnapshot(date, markets)
+            if (snap.hasData) {
+                snapshot = snap
+                store.appendMarketSnapshot(snap)
+            }
+        } catch (e: Exception) {
+            notes.add("成交/资金数据获取失败")
+        }
+
+        // ⑤ 历史快照（用于「较上一交易日」与资金连续性）
+        val marketHistory = store.loadMarketSnapshots().filter { it.date < date }
+        val marketPrev = marketHistory.lastOrNull()
+
+        // ⑥ 推荐连续性统计
         val history = store.loadSignalHistory()
         val streaks = SignalHistory.streaks(history)
 
@@ -251,7 +290,10 @@ class Engine(private val ds: DataSource, private val store: Store) {
             streaks = streaks,
             watch = watch,
             historyDays = SignalHistory.tradingDays(history),
-            notes = notes
+            notes = notes,
+            market = snapshot,
+            marketPrev = marketPrev,
+            marketHistory = marketHistory
         )
     }
 

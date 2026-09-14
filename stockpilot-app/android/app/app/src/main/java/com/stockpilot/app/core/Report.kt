@@ -48,7 +48,13 @@ class ReportInput(
     val streaks: Map<String, Streak>,
     val watch: List<WatchResult>,
     val historyDays: Int = 0,
-    val notes: List<String> = emptyList()
+    val notes: List<String> = emptyList(),
+    /** 当日全市场成交与资金快照 */
+    val market: MarketSnapshot? = null,
+    /** 上一交易日的快照（环比用） */
+    val marketPrev: MarketSnapshot? = null,
+    /** 历史快照（连续性用），按日期升序 */
+    val marketHistory: List<MarketSnapshot> = emptyList()
 )
 
 /**
@@ -144,6 +150,15 @@ object Report {
                 .append(" 平（共 ").append(breadth.sectorTotal).append(" 个，已剔除风格/指数类）")
                 .append("｜主力净流入板块 ").append(breadth.fundInSectors)
                 .append(" 个 / 净流出 ").append(breadth.fundOutSectors).append(" 个\n")
+        }
+
+        // 成交与资金（全市场口径）
+        val statLines = MarketStat.lines(input.market, input.marketPrev)
+        if (statLines.isNotEmpty()) {
+            sb.append("\n**全市场成交与资金**\n")
+            for (l in statLines) sb.append(l).append('\n')
+            val streak = MarketStat.mainStreak(input.market, input.marketHistory)
+            if (streak != null) sb.append("- 资金趋势：").append(streak).append('\n')
         }
         sb.append('\n')
     }
@@ -400,6 +415,33 @@ object Report {
                         breadth.fundOutSectors + " 个（" + fmt0(ratio) + " 的板块获资金净流入），" +
                         if (ratio >= 0.5) "资金面偏多，可适度乐观" else "资金面偏谨慎，注意控制仓位"
             )
+        }
+
+        // 全市场资金进出与量能（沪市 + 深市 + 北交所）
+        val m = input.market
+        if (m != null && m.hasData) {
+            val inflow = m.mainTotal >= 0
+            val streak = MarketStat.mainStreak(m, input.marketHistory)
+            out.add(
+                "全市场主力资金净" + (if (inflow) "流入 " else "流出 ") + MarketStat.yi(m.mainTotal) +
+                        (if (streak != null) "（" + streak + "）" else "") + "，" +
+                        if (inflow) "资金面偏多，可适度乐观" else "资金持续流出，注意控制仓位与止损"
+            )
+            val p = input.marketPrev
+            if (p != null && p.hasData && p.amountTotal > 0 && m.amountTotal > 0) {
+                val d = (m.amountTotal - p.amountTotal) / p.amountTotal * 100
+                out.add(
+                    "全市场成交额较上一交易日" + (if (d >= 0) "放大 " else "萎缩 ") +
+                            MarketStat.pct(Math.abs(d)) + "，" +
+                            when {
+                                d >= 15 -> "明显放量、分歧加大，注意高位股的兑现压力"
+                                d >= 3 -> "温和放量，量价配合尚可，可跟随强势方向"
+                                d <= -15 -> "明显缩量、追高意愿不足，反弹力度或受限"
+                                d <= -3 -> "小幅缩量，观望情绪上升，宜降低操作频率"
+                                else -> "量能与上一交易日基本持平，维持原有节奏"
+                            }
+                )
+            }
         }
         return out
     }

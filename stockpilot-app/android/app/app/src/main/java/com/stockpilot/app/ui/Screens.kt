@@ -26,7 +26,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.stockpilot.app.core.Report
@@ -52,6 +56,27 @@ private fun actionColor(a: String): Color = when (a) {
     else -> Color(0xFF444444)
 }
 
+/**
+ * 报告正文着色：带正负号的数据按 A 股习惯渲染——增长(正)标红、下降(负)标绿。
+ * 数字前的字符若是字母/数字则不着色（避免把「T+1」「2026-09-14」误判为数据）。
+ */
+private val REPORT_NUM = Regex("(?<![0-9A-Za-z])[+-]\\d[\\d,]*(?:\\.\\d+)?(?:万亿|亿手|万手|亿|万|手|%)?")
+
+private fun colorizeReport(text: String): AnnotatedString = buildAnnotatedString {
+    var i = 0
+    while (i < text.length) {
+        val m = REPORT_NUM.find(text, i)
+        if (m == null) {
+            append(text.substring(i))
+            return@buildAnnotatedString
+        }
+        append(text.substring(i, m.range.first))
+        val tok = m.value
+        withStyle(SpanStyle(color = if (tok.startsWith("+")) RED else GREEN)) { append(tok) }
+        i = m.range.last + 1
+    }
+}
+
 @Composable
 private fun Head(st: AppState) {
     Text("StockPilot", fontSize = 20.sp, fontWeight = FontWeight.Bold)
@@ -72,11 +97,19 @@ private fun StockRow(
     r: WatchResult,
     actionText: String? = null,
     actionTint: Color = RED,
-    onAction: (() -> Unit)? = null
+    onAction: (() -> Unit)? = null,
+    onNameClick: (() -> Unit)? = null
 ) {
+    val nameClick = onNameClick
     Column(Modifier.fillMaxWidth().padding(vertical = 7.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(r.stock.name, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            Text(
+                r.stock.name,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = RED,
+                modifier = if (nameClick != null) Modifier.clickable { nameClick() } else Modifier
+            )
             Spacer(Modifier.width(6.dp))
             Text(r.stock.code, fontSize = 11.sp, color = GRAY)
             Spacer(Modifier.weight(1f))
@@ -163,7 +196,8 @@ fun WatchScreen(st: AppState, scope: CoroutineScope) {
         } else {
             LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
                 items(st.results, key = { it.stock.secid }) { r ->
-                    StockRow(r, "删除", RED) { st.removeWatch(r.stock.secid) }
+                    // 用具名参数传入，避免尾随 lambda 绑定到新增的 onNameClick 上
+                    StockRow(r, "删除", RED, onAction = { st.removeWatch(r.stock.secid) })
                 }
             }
         }
@@ -196,9 +230,10 @@ fun RecommendScreen(st: AppState, scope: CoroutineScope) {
             LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
                 items(st.recos, key = { it.stock.secid }) { r ->
                     if (st.isWatched(r.stock.secid)) {
-                        StockRow(r, "已关注", GRAY, null)
+                        StockRow(r, "已关注", GRAY, null, null)
                     } else {
-                        StockRow(r, "＋关注", RED) { st.addWatch(r.stock) }
+                        // 点击股票名称即可加入自选
+                        StockRow(r, "＋关注", RED, { st.addWatch(r.stock) }, { st.addWatch(r.stock) })
                     }
                 }
             }
@@ -239,7 +274,9 @@ fun UsScreen(st: AppState, scope: CoroutineScope) {
         Spacer(Modifier.height(6.dp))
         Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
             Text(
-                if (st.usReport.isEmpty()) "报告内容将显示在这里。" else st.usReport,
+                colorizeReport(
+                    if (st.usReport.isEmpty()) "报告内容将显示在这里。" else st.usReport
+                ),
                 fontSize = 12.sp
             )
         }
@@ -282,7 +319,8 @@ fun ReportScreen(st: AppState, scope: CoroutineScope) {
 
         Spacer(Modifier.height(6.dp))
         Text(
-            "报告内容：大盘 → 热点板块 → 龙头个股 → 推荐个股（信号连续性排行）→ 我的关注 → 投资建议",
+            "报告内容：大盘（含全市场成交额/成交量/资金进出）→ 热点板块 → 龙头个股 → " +
+                    "推荐个股（信号连续性排行）→ 我的关注 → 投资建议",
             fontSize = 11.sp, color = GRAY
         )
         if (st.reportStocks.isNotEmpty()) {
@@ -308,7 +346,10 @@ fun ReportScreen(st: AppState, scope: CoroutineScope) {
                 Spacer(Modifier.height(6.dp))
             }
             Text(
-                if (st.reportText.isEmpty()) "报告内容将显示在这里。交易日 15:30 后会自动生成并推送通知。" else st.reportText,
+                colorizeReport(
+                    if (st.reportText.isEmpty()) "报告内容将显示在这里。交易日 15:30 后会自动生成并推送通知。"
+                    else st.reportText
+                ),
                 fontSize = 12.sp
             )
         }
@@ -321,7 +362,14 @@ private fun ReportStockRow(row: ReportStock, watched: Boolean, onAdd: () -> Unit
     val px = row.price
     Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(row.name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            // 股票名称统一红色；未关注时点击名称即可加入自选
+            Text(
+                row.name,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = RED,
+                modifier = Modifier.clickable(enabled = !watched) { onAdd() }
+            )
             Spacer(Modifier.width(6.dp))
             Text(row.code, fontSize = 11.sp, color = GRAY)
             Spacer(Modifier.weight(1f))

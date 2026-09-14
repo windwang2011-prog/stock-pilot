@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 自适应图标前景：白色递增柱状 + 上行折线箭头（寓意股票上涨） -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 三根递增柱状 -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M24,70h11v16h-11z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M40,62h11v24h-11z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M56,54h11v32h-11z" />
+
+    <!-- 上行折线（含一次回踩后继续上行） -->
+    <path
+        android:pathData="M34,54 L48,40 L58,46 L74,28"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="6.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- 箭头 -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M80,21 L75,38 L64,29 Z" />
+</vector>

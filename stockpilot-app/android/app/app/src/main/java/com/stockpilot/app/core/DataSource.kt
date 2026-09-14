@@ -282,6 +282,30 @@ class DataSource {
         return rows
     }
 
+    // ---------------- 资金流向（指数/个股，当日） ----------------
+    /**
+     * 资金流向：主力=f52、小单=f53、中单=f54、大单=f55、超大单=f56、主力净占比=f57（单位：元 / %）。
+     * 已实测校验：主力 = 大单 + 超大单。接口只返回当日，跨日对比用本地快照。
+     */
+    fun getFundFlow(secid: String): FundFlow? {
+        val url = "https://push2.eastmoney.com/api/qt/stock/fflow/daykline/get?lmt=1&klt=101" +
+                "&secid=$secid&fields1=f1,f2,f3,f7&fields2=f51,f52,f53,f54,f55,f56,f57"
+        val txt = fetchText(url, 60_000)
+        val arr = JSONObject(txt).optJSONObject("data")?.optJSONArray("klines") ?: return null
+        if (arr.length() == 0) return null
+        val p = arr.optString(arr.length() - 1).split(",")
+        if (p.size < 7) return null
+        val main = p[1].toDoubleOrNull() ?: return null
+        return FundFlow(
+            main = main,
+            small = p[2].toDoubleOrNull() ?: 0.0,
+            medium = p[3].toDoubleOrNull() ?: 0.0,
+            large = p[4].toDoubleOrNull() ?: 0.0,
+            superLarge = p[5].toDoubleOrNull() ?: 0.0,
+            mainPct = p[6].toDoubleOrNull() ?: 0.0
+        )
+    }
+
     // ---------------- 板块 ----------------
     /**
      * 概念板块全量列表（东方财富共 500+ 个，接口每页上限 100，需要翻页）。

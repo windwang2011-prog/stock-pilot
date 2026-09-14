@@ -209,6 +209,71 @@ class Store(ctx: Context) {
         }
     }
 
+    // ---------------- 全市场成交/资金快照（用于环比与连续性统计） ----------------
+    fun appendMarketSnapshot(s: MarketSnapshot) {
+        if (!s.hasData) return
+        val list = loadMarketSnapshots().filter { it.date != s.date }.toMutableList()
+        list.add(s)
+        val arr = JSONArray()
+        for (snap in list.sortedBy { it.date }.takeLast(40)) {
+            val ms = JSONArray()
+            for (m in snap.markets) {
+                ms.put(
+                    JSONObject()
+                        .put("name", m.name)
+                        .put("secid", m.secid)
+                        .put("amount", m.amount)
+                        .put("volume", m.volume)
+                        .put("main", m.main)
+                        .put("superLarge", m.superLarge)
+                        .put("large", m.large)
+                        .put("medium", m.medium)
+                        .put("small", m.small)
+                        .put("mainPct", m.mainPct)
+                )
+            }
+            arr.put(JSONObject().put("date", snap.date).put("markets", ms))
+        }
+        sp.edit().putString(KEY_MARKET_STATS, arr.toString()).apply()
+    }
+
+    /** 按日期升序返回历史快照 */
+    fun loadMarketSnapshots(): List<MarketSnapshot> {
+        val s = sp.getString(KEY_MARKET_STATS, null) ?: return emptyList()
+        return try {
+            val arr = JSONArray(s)
+            val out = ArrayList<MarketSnapshot>()
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                val ms = o.optJSONArray("markets") ?: JSONArray()
+                val rows = ArrayList<MarketAmount>()
+                for (j in 0 until ms.length()) {
+                    val m = ms.optJSONObject(j) ?: continue
+                    val secid = m.optString("secid")
+                    if (secid.isEmpty()) continue
+                    rows.add(
+                        MarketAmount(
+                            name = m.optString("name"),
+                            secid = secid,
+                            amount = m.optDouble("amount", 0.0),
+                            volume = m.optDouble("volume", 0.0),
+                            main = m.optDouble("main", 0.0),
+                            superLarge = m.optDouble("superLarge", 0.0),
+                            large = m.optDouble("large", 0.0),
+                            medium = m.optDouble("medium", 0.0),
+                            small = m.optDouble("small", 0.0),
+                            mainPct = m.optDouble("mainPct", 0.0)
+                        )
+                    )
+                }
+                out.add(MarketSnapshot(o.optString("date"), rows))
+            }
+            out.sortedBy { it.date }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
     // ---------------- 设置 ----------------
     var scanIntervalMin: Int
         get() = sp.getInt(KEY_INTERVAL, 5).coerceIn(1, 60)
@@ -234,6 +299,7 @@ class Store(ctx: Context) {
         private const val KEY_WATCH = "watchlist"
         private const val KEY_SIGNALS = "signalHistory"
         private const val KEY_REPORT_STOCKS = "reportStocks"
+        private const val KEY_MARKET_STATS = "marketStats"
         private const val KEY_LAST_ACTION = "lastAction"
         private const val KEY_REPORTS = "reports"
         private const val KEY_US_REPORTS = "usReports"
