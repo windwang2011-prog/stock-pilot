@@ -7,13 +7,24 @@ import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
-/** 板块 */
+/**
+ * 板块
+ * 字段语义（已用真实接口核对）：
+ *   changePct=f3 涨跌幅 ｜ mainFund=f62 主力净流入额 ｜ mainPct=f184 主力净占比
+ *   turnover=f8 换手率   ｜ upCount=f104 上涨家数 ｜ downCount=f105 下跌家数
+ *   leaderName=f128 领涨股名称 ｜ leaderCode=f140 领涨股代码
+ */
 data class Sector(
     val code: String,
     val name: String,
     val changePct: Double,
     val mainFund: Double,
-    val turnover: Double
+    val turnover: Double,
+    val mainPct: Double = 0.0,
+    val upCount: Int = 0,
+    val downCount: Int = 0,
+    val leaderName: String = "",
+    val leaderCode: String = ""
 )
 
 /** 成分股简表 */
@@ -135,7 +146,7 @@ class DataSource {
 
     private fun emQuotes(secids: List<String>): List<Quote> {
         val url = "https://push2.eastmoney.com/api/qt/ulist.np/get?fltt=2&invt=2" +
-                "&fields=f1,f2,f3,f4,f5,f6,f7,f8,f10,f12,f13,f14,f15,f16,f17,f18,f22,f62,f184,f124" +
+                "&fields=f1,f2,f3,f4,f5,f6,f7,f8,f10,f12,f13,f14,f15,f16,f17,f18,f22,f62,f104,f105,f106,f184,f124" +
                 "&secids=" + secids.joinToString(",")
         val txt = fetchText(url, 5_000)
         val diff = JSONObject(txt).optJSONObject("data")?.optJSONArray("diff") ?: JSONArray()
@@ -163,7 +174,10 @@ class DataSource {
                     prevClose = jd(d, "f18"),
                     speed = jd(d, "f22"),
                     mainNet = jd(d, "f62"),
-                    mainPct = jd(d, "f184")
+                    mainPct = jd(d, "f184"),
+                    advanceCount = jd(d, "f104")?.toInt(),
+                    declineCount = jd(d, "f105")?.toInt(),
+                    flatCount = jd(d, "f106")?.toInt()
                 )
             )
         }
@@ -269,23 +283,48 @@ class DataSource {
     }
 
     // ---------------- 板块 ----------------
+    /**
+     * 概念板块全量列表（东方财富共 500+ 个，接口每页上限 100，需要翻页）。
+     * 只取第一页会得到「涨幅榜前 100」，用它统计涨跌家数会严重失真，因此必须取全量。
+     */
     fun getHotSectors(): List<Sector> {
-        val url = "https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=120&po=1&np=1&fltt=2&invt=2&fid=f3" +
-                "&fs=m:90+t:3&fields=f12,f14,f3,f62,f184,f6"
-        val txt = fetchText(url, 60_000)
-        val diff = JSONObject(txt).optJSONObject("data")?.optJSONArray("diff") ?: JSONArray()
         val out = ArrayList<Sector>()
-        for (i in 0 until diff.length()) {
-            val d = diff.optJSONObject(i) ?: continue
-            out.add(
-                Sector(
-                    code = js(d, "f12") ?: "",
-                    name = js(d, "f14") ?: "",
-                    changePct = jd(d, "f3") ?: 0.0,
-                    mainFund = jd(d, "f62") ?: 0.0,
-                    turnover = jd(d, "f184") ?: 0.0
+        val seen = HashSet<String>()
+        var page = 1
+        var total = Int.MAX_VALUE
+        while (out.size < total && page <= 8) {
+            val url = "https://push2.eastmoney.com/api/qt/clist/get?pn=$page&pz=100&po=1&np=1&fltt=2&invt=2&fid=f3" +
+                    "&fs=m:90+t:3&fields=f12,f14,f3,f8,f62,f104,f105,f128,f140,f184"
+            val txt = try {
+                fetchText(url, 120_000)
+            } catch (e: Exception) {
+                break   // 部分页失败时保留已取到的数据，避免整体不可用
+            }
+            val data = JSONObject(txt).optJSONObject("data") ?: break
+            total = data.optInt("total", 0)
+            val diff = data.optJSONArray("diff") ?: break
+            if (diff.length() == 0) break
+            for (i in 0 until diff.length()) {
+                val d = diff.optJSONObject(i) ?: continue
+                val code = js(d, "f12") ?: continue
+                if (!seen.add(code)) continue
+                out.add(
+                    Sector(
+                        code = code,
+                        name = js(d, "f14") ?: "",
+                        changePct = jd(d, "f3") ?: 0.0,
+                        mainFund = jd(d, "f62") ?: 0.0,
+                        turnover = jd(d, "f8") ?: 0.0,
+                        mainPct = jd(d, "f184") ?: 0.0,
+                        upCount = (jd(d, "f104") ?: 0.0).toInt(),
+                        downCount = (jd(d, "f105") ?: 0.0).toInt(),
+                        leaderName = js(d, "f128") ?: "",
+                        leaderCode = js(d, "f140") ?: ""
+                    )
                 )
-            )
+            }
+            if (diff.length() < 100) break
+            page++
         }
         if (out.isEmpty()) throw RuntimeException("empty sectors")
         return out

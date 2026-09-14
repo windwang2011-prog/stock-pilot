@@ -31,7 +31,11 @@ data class Quote(
     val speed: Double? = null,
     val mainNet: Double? = null,
     val mainPct: Double? = null,
-    val avg: Double? = null
+    val avg: Double? = null,
+    // 以下三项仅指数节点有效：该市场/板块的上涨、下跌、平盘家数（f104/f105/f106）
+    val advanceCount: Int? = null,
+    val declineCount: Int? = null,
+    val flatCount: Int? = null
 )
 
 data class SessionPoint(val tag: String, val text: String, val impact: Int)

@@ -8,6 +8,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.stockpilot.app.core.DataSource
 import com.stockpilot.app.core.Engine
+import com.stockpilot.app.core.MarketIndex
 import com.stockpilot.app.core.Sector
 import com.stockpilot.app.core.StockRef
 import com.stockpilot.app.core.Store
@@ -74,7 +75,10 @@ class AppState(private val ctx: Context) {
         store.saveWatchlist(list)
         searchResults = emptyList()
         searchKw = ""
+        status = "已关注：" + ref.name
     }
+
+    fun isWatched(secid: String): Boolean = watchlist.any { it.secid == secid }
 
     fun removeWatch(secid: String) {
         val list = watchlist.filter { it.secid != secid }.toMutableList()
@@ -103,7 +107,7 @@ class AppState(private val ctx: Context) {
         error = null
         try {
             val all = withContext(Dispatchers.IO) {
-                val secs = ds.getHotSectors()
+                val secs = MarketIndex.realSectors(ds.getHotSectors())
                     .sortedByDescending { Strategy.sectorHotness(it.changePct, it.mainFund, it.turnover) }
                     .take(3)
                 sectors = secs
@@ -132,24 +136,48 @@ class AppState(private val ctx: Context) {
 
     // ---------------- 报告 ----------------
     suspend fun buildReportNow() {
-        if (watchlist.isEmpty()) {
-            reportText = "自选为空，无法生成报告"
-            return
-        }
+        status = "正在生成报告（大盘 / 板块 / 龙头 / 推荐 / 自选）…"
         try {
             val text = withContext(Dispatchers.IO) {
-                val r = engine.scan(watchlist)
+                // 报告包含全市场部分，因此自选为空也可生成
+                val r = if (watchlist.isEmpty()) emptyList() else engine.scan(watchlist)
                 engine.buildAndSaveReport(r)
             }
             reportText = text
             reports = store.loadReports()
+            status = "报告已生成：" + store.lastReportDate
         } catch (e: Exception) {
             reportText = "生成失败：" + (e.message ?: e.javaClass.simpleName)
+            status = "报告生成失败"
         }
     }
 
     fun loadReport(date: String) {
         reportText = reports.firstOrNull { it.first == date }?.second ?: ""
+    }
+
+    // ---------------- 美股盘面热点 ----------------
+    var usReport by mutableStateOf("")
+    var usReports by mutableStateOf(store.loadUsReports())
+    var usLoading by mutableStateOf(false)
+
+    suspend fun refreshUs() {
+        usLoading = true
+        error = null
+        try {
+            val text = withContext(Dispatchers.IO) { engine.buildAndSaveUsReport() }
+            usReport = text
+            usReports = store.loadUsReports()
+            status = "美股盘面已更新：" + store.lastUsReportDate
+        } catch (e: Exception) {
+            error = "美股数据获取失败：" + (e.message ?: e.javaClass.simpleName)
+        } finally {
+            usLoading = false
+        }
+    }
+
+    fun loadUsReport(date: String) {
+        usReport = usReports.firstOrNull { it.first == date }?.second ?: ""
     }
 
     // ---------------- 设置 / 服务 ----------------

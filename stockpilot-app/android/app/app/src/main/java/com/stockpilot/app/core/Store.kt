@@ -56,20 +56,28 @@ class Store(ctx: Context) {
         sp.edit().putString(KEY_LAST_ACTION, o.toString()).apply()
     }
 
-    // ---------------- 报告 ----------------
-    fun appendReport(date: String, text: String) {
-        val list = loadReports().toMutableList()
+    // ---------------- 报告（A股盘后 / 美股盘后） ----------------
+    fun appendReport(date: String, text: String) = appendList(KEY_REPORTS, date, text)
+
+    fun loadReports(): List<Pair<String, String>> = loadList(KEY_REPORTS)
+
+    fun appendUsReport(date: String, text: String) = appendList(KEY_US_REPORTS, date, text)
+
+    fun loadUsReports(): List<Pair<String, String>> = loadList(KEY_US_REPORTS)
+
+    private fun appendList(key: String, date: String, text: String) {
+        val list = loadList(key).toMutableList()
         list.removeAll { it.first == date }
         list.add(0, Pair(date, text))
         val arr = JSONArray()
         for ((d, t) in list.take(60)) {
             arr.put(JSONObject().put("date", d).put("text", t))
         }
-        sp.edit().putString(KEY_REPORTS, arr.toString()).apply()
+        sp.edit().putString(key, arr.toString()).apply()
     }
 
-    fun loadReports(): List<Pair<String, String>> {
-        val s = sp.getString(KEY_REPORTS, null) ?: return emptyList()
+    private fun loadList(key: String): List<Pair<String, String>> {
+        val s = sp.getString(key, null) ?: return emptyList()
         return try {
             val arr = JSONArray(s)
             val out = ArrayList<Pair<String, String>>()
@@ -81,6 +89,61 @@ class Store(ctx: Context) {
         } catch (e: Exception) {
             emptyList()
         }
+    }
+
+    // ---------------- 推荐信号历史（用于「连续 N 天建议买入」统计） ----------------
+    fun loadSignalHistory(): List<SignalSnapshot> {
+        val s = sp.getString(KEY_SIGNALS, null) ?: return emptyList()
+        return try {
+            val arr = JSONArray(s)
+            val out = ArrayList<SignalSnapshot>()
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                val itemsArr = o.optJSONArray("items") ?: JSONArray()
+                val items = ArrayList<SignalItem>()
+                for (j in 0 until itemsArr.length()) {
+                    val iObj = itemsArr.optJSONObject(j) ?: continue
+                    val secid = iObj.optString("secid")
+                    if (secid.isEmpty()) continue
+                    items.add(
+                        SignalItem(
+                            secid = secid,
+                            name = iObj.optString("name"),
+                            action = iObj.optString("action"),
+                            score = iObj.optInt("score", 0),
+                            price = if (iObj.has("price") && !iObj.isNull("price"))
+                                iObj.optDouble("price") else null
+                        )
+                    )
+                }
+                out.add(SignalSnapshot(o.optString("date"), items))
+            }
+            out.sortedBy { it.date }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    /** 写入当日快照（同日覆盖），最多保留最近 40 个交易日 */
+    fun appendSignalSnapshot(snap: SignalSnapshot) {
+        if (snap.items.isEmpty()) return
+        val list = loadSignalHistory().filter { it.date != snap.date }.toMutableList()
+        list.add(snap)
+        val arr = JSONArray()
+        for (day in list.sortedBy { it.date }.takeLast(40)) {
+            val items = JSONArray()
+            for (si in day.items) {
+                val o = JSONObject()
+                    .put("secid", si.secid)
+                    .put("name", si.name)
+                    .put("action", si.action)
+                    .put("score", si.score)
+                if (si.price != null) o.put("price", si.price)
+                items.put(o)
+            }
+            arr.put(JSONObject().put("date", day.date).put("items", items))
+        }
+        sp.edit().putString(KEY_SIGNALS, arr.toString()).apply()
     }
 
     // ---------------- 设置 ----------------
@@ -96,14 +159,21 @@ class Store(ctx: Context) {
         get() = sp.getString(KEY_LAST_REPORT, "") ?: ""
         set(v) = sp.edit().putString(KEY_LAST_REPORT, v).apply()
 
+    var lastUsReportDate: String
+        get() = sp.getString(KEY_LAST_US_REPORT, "") ?: ""
+        set(v) = sp.edit().putString(KEY_LAST_US_REPORT, v).apply()
+
     var watchEnabled: Boolean
         get() = sp.getBoolean(KEY_WATCH_ENABLED, false)
         set(v) = sp.edit().putBoolean(KEY_WATCH_ENABLED, v).apply()
 
     companion object {
         private const val KEY_WATCH = "watchlist"
+        private const val KEY_SIGNALS = "signalHistory"
         private const val KEY_LAST_ACTION = "lastAction"
         private const val KEY_REPORTS = "reports"
+        private const val KEY_US_REPORTS = "usReports"
+        private const val KEY_LAST_US_REPORT = "lastUsReportDate"
         private const val KEY_INTERVAL = "scanIntervalMin"
         private const val KEY_NOTIFY = "notifyEnabled"
         private const val KEY_LAST_REPORT = "lastReportDate"

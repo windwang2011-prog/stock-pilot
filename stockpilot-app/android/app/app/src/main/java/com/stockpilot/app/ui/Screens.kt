@@ -65,7 +65,12 @@ private fun Head(st: AppState) {
 }
 
 @Composable
-private fun StockRow(r: WatchResult, onRemove: (() -> Unit)?) {
+private fun StockRow(
+    r: WatchResult,
+    actionText: String? = null,
+    actionTint: Color = RED,
+    onAction: (() -> Unit)? = null
+) {
     Column(Modifier.fillMaxWidth().padding(vertical = 7.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(r.stock.name, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
@@ -85,8 +90,13 @@ private fun StockRow(r: WatchResult, onRemove: (() -> Unit)?) {
             Spacer(Modifier.width(10.dp))
             Text("主力 " + Report.fmtMoney(r.mainNet), fontSize = 11.sp, color = GRAY)
             Spacer(Modifier.weight(1f))
-            if (onRemove != null) {
-                Text("删除", fontSize = 11.sp, color = RED, modifier = Modifier.clickable { onRemove() })
+            if (actionText != null) {
+                Text(
+                    actionText,
+                    fontSize = 11.sp,
+                    color = actionTint,
+                    modifier = Modifier.clickable(enabled = onAction != null) { onAction?.invoke() }
+                )
             }
         }
         if (r.signal.sessionSummary.isNotEmpty()) {
@@ -150,7 +160,7 @@ fun WatchScreen(st: AppState, scope: CoroutineScope) {
         } else {
             LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
                 items(st.results, key = { it.stock.secid }) { r ->
-                    StockRow(r) { st.removeWatch(r.stock.secid) }
+                    StockRow(r, "删除", RED) { st.removeWatch(r.stock.secid) }
                 }
             }
         }
@@ -182,9 +192,53 @@ fun RecommendScreen(st: AppState, scope: CoroutineScope) {
         } else {
             LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
                 items(st.recos, key = { it.stock.secid }) { r ->
-                    StockRow(r, null)
+                    if (st.isWatched(r.stock.secid)) {
+                        StockRow(r, "已关注", GRAY, null)
+                    } else {
+                        StockRow(r, "＋关注", RED) { st.addWatch(r.stock) }
+                    }
                 }
             }
+        }
+    }
+}
+
+// ==================== 美股盘面 ====================
+@Composable
+fun UsScreen(st: AppState, scope: CoroutineScope) {
+    Column(Modifier.fillMaxSize().padding(16.dp)) {
+        Head(st)
+        Text("美股隔夜走势 → A股次日参考。含大盘指数、行业板块涨跌榜、龙头个股与中概股。",
+            fontSize = 11.sp, color = GRAY)
+        Spacer(Modifier.height(8.dp))
+
+        Button(onClick = { scope.launch { st.refreshUs() } }) {
+            Text(if (st.usLoading) "拉取中…" else "刷新美股盘面")
+        }
+        Spacer(Modifier.height(8.dp))
+
+        if (st.usReports.isNotEmpty()) {
+            Text("历史报告（点选查看）：", fontSize = 12.sp, color = GRAY)
+            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                for (r in st.usReports.take(4)) {
+                    Text(
+                        r.first,
+                        fontSize = 11.sp,
+                        color = RED,
+                        modifier = Modifier.padding(end = 10.dp).clickable { st.loadUsReport(r.first) }
+                    )
+                }
+            }
+        } else {
+            Text("交易日北京时间 05:30 后会自动生成并推送通知。", fontSize = 12.sp, color = GRAY)
+        }
+
+        Spacer(Modifier.height(6.dp))
+        Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
+            Text(
+                if (st.usReport.isEmpty()) "报告内容将显示在这里。" else st.usReport,
+                fontSize = 12.sp
+            )
         }
     }
 }
@@ -218,9 +272,14 @@ fun ReportScreen(st: AppState, scope: CoroutineScope) {
         }
 
         Spacer(Modifier.height(6.dp))
+        Text(
+            "报告内容：大盘 → 热点板块 → 龙头个股 → 推荐个股（信号连续性排行）→ 我的关注 → 投资建议",
+            fontSize = 11.sp, color = GRAY
+        )
+        Spacer(Modifier.height(6.dp))
         Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
             Text(
-                if (st.reportText.isEmpty()) "报告内容将显示在这里。" else st.reportText,
+                if (st.reportText.isEmpty()) "报告内容将显示在这里。交易日 15:30 后会自动生成并推送通知。" else st.reportText,
                 fontSize = 12.sp
             )
         }

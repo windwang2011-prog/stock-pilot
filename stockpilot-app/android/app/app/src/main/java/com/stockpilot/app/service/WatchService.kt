@@ -75,28 +75,48 @@ class WatchService : Service() {
 
     private fun tick() {
         val now = System.currentTimeMillis()
-        val phase = Strategy.marketPhase(now)
-        val stocks = store.loadWatchlist()
 
-        if (stocks.isEmpty()) {
-            Notifier.updateForeground(this, phase.label + " · 自选为空，请先在 App 中添加自选股")
+        // ⓪ 美股盘后热点报告（北京时间 05:30-09:00，每天一次，与自选无关）
+        if (engine.isUsReportWindow(now) && store.lastUsReportDate != engine.today(now)) {
+            Notifier.updateForeground(this, "正在生成美股盘面热点报告…")
+            try {
+                val text = engine.buildAndSaveUsReport(now)
+                if (store.notifyEnabled) {
+                    Notifier.popup(
+                        this, 9002, "StockPilot 美股盘面热点",
+                        text.split("\n").take(12).joinToString("\n")
+                    )
+                }
+                Notifier.updateForeground(this, "美股盘面报告已生成 · " + timeFmt.format(Date(now)))
+            } catch (e: Exception) {
+                Notifier.updateForeground(this, "美股报告生成失败，稍后重试")
+            }
             return
         }
 
-        // ① 盘后报告（每天一次）
+        val phase = Strategy.marketPhase(now)
+        val stocks = store.loadWatchlist()
+
+        // ① 每日报告（每天一次）——报告包含大盘/热门板块/龙头/推荐连续性 + 自选，
+        //    因此与自选是否为空无关；若 15:30 未开机，之后启动会补生当天报告
         if (engine.isReportWindow(now) && store.lastReportDate != engine.today(now)) {
-            Notifier.updateForeground(this, "正在生成盘后汇总报告…")
-            val results = engine.scan(stocks, now)
+            Notifier.updateForeground(this, "正在生成每日报告…")
+            val results = if (stocks.isEmpty()) emptyList() else engine.scan(stocks, now)
             val text = engine.buildAndSaveReport(results, now)
             if (store.notifyEnabled) {
-                val head = text.split("\n").take(8).joinToString("\n")
+                val head = text.split("\n").take(10).joinToString("\n")
                 Notifier.popup(
                     this, 9001,
-                    "StockPilot 盘后汇总（" + Report.summaryLine(results) + "）",
+                    "StockPilot 每日报告（" + Report.summaryLine(results) + "）",
                     head
                 )
             }
-            Notifier.updateForeground(this, "盘后报告已生成 · " + timeFmt.format(Date(now)))
+            Notifier.updateForeground(this, "每日报告已生成 · " + timeFmt.format(Date(now)))
+            return
+        }
+
+        if (stocks.isEmpty()) {
+            Notifier.updateForeground(this, phase.label + " · 自选为空，请先在 App 中添加自选股")
             return
         }
 

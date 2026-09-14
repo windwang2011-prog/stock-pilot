@@ -30,6 +30,7 @@ import com.stockpilot.app.ui.AppState
 import com.stockpilot.app.ui.RecommendScreen
 import com.stockpilot.app.ui.ReportScreen
 import com.stockpilot.app.ui.SettingsScreen
+import com.stockpilot.app.ui.UsScreen
 import com.stockpilot.app.ui.WatchScreen
 import com.stockpilot.app.service.Notifier
 import kotlinx.coroutines.CoroutineScope
@@ -74,7 +75,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun AppScaffold(st: AppState, scope: CoroutineScope) {
-    val tabs = listOf("自选", "推荐", "报告", "设置")
+    val tabs = listOf("自选", "推荐", "美股", "报告", "设置")
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
             for (i in tabs.indices) {
@@ -95,7 +96,8 @@ private fun AppScaffold(st: AppState, scope: CoroutineScope) {
         when (st.tab) {
             0 -> WatchScreen(st, scope)
             1 -> RecommendScreen(st, scope)
-            2 -> ReportScreen(st, scope)
+            2 -> UsScreen(st, scope)
+            3 -> ReportScreen(st, scope)
             else -> SettingsScreen(st, scope)
         }
     }
