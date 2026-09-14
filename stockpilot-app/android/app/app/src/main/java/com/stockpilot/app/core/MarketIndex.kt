@@ -62,6 +62,9 @@ object MarketIndex {
     fun price(v: Double?): String =
         if (v == null || v.isNaN()) "--" else String.format(Locale.US, "%,.2f", v)
 
+    /** 占比取整展示，如 0.5618 -> "56%" */
+    private fun fmt0(ratio: Double): String = String.format(Locale.US, "%.0f%%", ratio * 100)
+
     /**
      * 市场宽度。
      *
