@@ -1,0 +1,11 @@
+{
+  "name": "stockpilot-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "StockPilot 移动端核心引擎（平台无关 TypeScript，供鸿蒙 ArkTS / Android Kotlin 参考与校验）",
+  "scripts": {
+    "test": "node --experimental-strip-types test/logic.test.ts",
+    "live": "node --experimental-strip-types test/live.ts"
+  }
+}
